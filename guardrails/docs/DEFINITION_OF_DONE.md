@@ -41,6 +41,14 @@ Un símbolo público, feature, endpoint, módulo o adapter NO está "done" hasta
    `new Adapter()`) bypassing el entry-point **no cuenta como integración**.
    Tests de integración deben ejercer el camino productivo.
 
+7. **Test de integración mandatory en feat/fix commits.** Cualquier commit con
+   prefijo `feat(` o `fix(` que no incluya un test nuevo en el mismo diff es
+   bloqueado por `integration-test-coverage.sh` Stop hook. El hook busca
+   archivos bajo `tests/`, con prefijo `test_`, sufijo `_test.*`, extensión
+   `.test.*` o `.spec.*` (configurable vía `TEST_GLOBS` en `project.conf`).
+   Bypass: env `SKIP_INTEGRATION_TEST_CHECK=1` (solo para hot-fixes
+   documentados — el hook deja log en stderr para auditoría posterior).
+
 **NO hagas commit con prefijo `feat:` si algo de lo anterior falla.**
 Usa `wip:` o `scaffold:` hasta cumplir DoD.
 
@@ -67,7 +75,7 @@ Si alguna pregunta queda sin output → no es done.
 ### Referencias
 
 - Caso real que motivó este DoD: `guardrails/docs/FAKE_WORK_AUDIT.md`
-- Hooks que enforce este DoD: `.claude/hooks/integration-gate.sh`
+- Hooks que enforce este DoD: `.claude/hooks/integration-gate.sh`, `.claude/hooks/integration-test-coverage.sh`
 - Mecanismo por lenguaje: `.claude/hooks/lang/`
 
 <!-- end: paste above into CLAUDE.md -->
