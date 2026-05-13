@@ -62,6 +62,7 @@ mkdir -p .claude/hooks/lang
 cp -f "$SCRIPT_DIR/.claude/hooks/integration-gate.sh" .claude/hooks/
 cp -f "$SCRIPT_DIR/.claude/hooks/ghost-report.sh" .claude/hooks/
 cp -f "$SCRIPT_DIR/.claude/hooks/new-symbol-guard.sh" .claude/hooks/
+cp -f "$SCRIPT_DIR/.claude/hooks/integration-test-coverage.sh" .claude/hooks/
 if [ "$LANG" = "python-rust" ]; then
     cp -f "$SCRIPT_DIR/.claude/hooks/lang/python.sh" .claude/hooks/lang/
     cp -f "$SCRIPT_DIR/.claude/hooks/lang/rust.sh" .claude/hooks/lang/
