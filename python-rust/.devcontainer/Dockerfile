@@ -130,3 +130,8 @@ RUN echo 'export HISTFILE=/commandhistory/.zsh_history' >> ~/.zshrc && \
 # Claude Code (needs npm)
 ARG CLAUDE_CODE_VERSION=latest
 RUN sudo npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+# Supply chain hardening (#40) — pnpm refuses to install package versions
+# younger than minimum-release-age (in .npmrc). 48h gives margin for malicious
+# packages to be detected & yanked. See .devcontainer/.npmrc.
+COPY --chown=dev:dev .npmrc /home/dev/.npmrc

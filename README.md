@@ -318,3 +318,15 @@ postgres:
 
 - Docker Desktop o Docker Engine en el host
 - VS Code con la extension Dev Containers
+
+## Supply chain hardening (pnpm)
+
+Stacks `node/` y `python-rust/` incluyen `.devcontainer/.npmrc` con `minimum-release-age=2880` (48 horas). pnpm 9+ rechaza instalar versiones de paquetes publicadas en las últimas 48h.
+
+**Razón**: ataques de cadena de suministro (paquetes legítimos comprometidos, postinstall maliciosos) viven horas-días en el registry antes de ser detectados y yanked. 48h de margen reduce dramáticamente la ventana de exposición.
+
+**Cost**: no podés instalar updates hot-off-the-press. En proyectos high-stakes subir a 10080 (7 días). En libs experimentales que necesitan ediciones rápidas, override con `pnpm config set minimum-release-age 0` por sesión.
+
+**Verificación post-build**: `docker exec <container> cat ~/.npmrc` debe mostrar la línea.
+
+Cross-ref: issue #40. Complementario a `ignore-scripts=true` (postinstall blocking).
