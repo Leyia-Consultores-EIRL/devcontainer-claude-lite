@@ -88,6 +88,8 @@ bash guardrails/install.sh /ruta/a/tu-proyecto rust   # o python, node, astro, n
 
 Ver [install.sh](install.sh) para detalle.
 
+**Auto-detección (monorepos)**: si **omites** el argumento `<lang>`, el instalador escanea el proyecto a `maxdepth 2` (raíz + un nivel de subdirectorios, podando `.git`, `node_modules`, `.venv`, `target`, `dist`, `build`) y clasifica por manifest: `pyproject.toml`/`requirements.txt` → python, `package.json` → node, `Cargo.toml` → rust, `go.mod` → go. Instala la **unión** de los stacks encontrados (project.conf multi-lang si hay más de uno, single-lang si hay uno solo). Esto cubre el caso radio-ia, donde los manifests vivían en `backend/`, `frontend/` y `zoom-service/` sin manifest raíz y el repo corrió semanas clasificado como `lang=unknown` y por ende sin guardrails. Pasar un `<lang>` explícito sigue funcionando exactamente igual que antes.
+
 **Multi-lang**: para repos con dos stacks activos al mismo tiempo (ej. Python + Rust), usa el meta-lang `python-rust`. Detalles en [docs/LANG_MATRIX.md §Multi-lang projects](docs/LANG_MATRIX.md#multi-lang-projects).
 
 ## Anatomía del paquete

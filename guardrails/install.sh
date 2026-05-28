@@ -31,9 +31,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TARGET="${1:-}"
 LANG="${2:-}"
 
-if [ -z "$TARGET" ] || [ -z "$LANG" ]; then
-    echo "Usage: $0 <target-project-dir> <lang>" >&2
+if [ -z "$TARGET" ]; then
+    echo "Usage: $0 <target-project-dir> [lang]" >&2
     echo "  langs: rust | python | node | astro | nextjs | go | java | kotlin-android | python-rust" >&2
+    echo "  (omit lang to auto-detect a monorepo at maxdepth 2)" >&2
     exit 1
 fi
 
@@ -42,32 +43,163 @@ if [ ! -d "$TARGET" ]; then
     exit 1
 fi
 
-case "$LANG" in
-    rust|python|node|astro|nextjs|go|java|kotlin-android) ;;
-    python-rust) ;;  # meta-lang: installs both python.sh + rust.sh
-    *)
-        echo "Unsupported language: $LANG" >&2
-        echo "Supported: rust | python | node | astro | nextjs | go | java | kotlin-android | python-rust" >&2
-        exit 1
-        ;;
-esac
+# ─── Mode selection ───────────────────────────────────────────────────
+# AUTO_DETECT=1 means <lang> was omitted → scan the target for manifests.
+# Otherwise the explicit-lang (incl. python-rust) paths run unchanged.
+AUTO_DETECT=0
+if [ -z "$LANG" ]; then
+    AUTO_DETECT=1
+else
+    case "$LANG" in
+        rust|python|node|astro|nextjs|go|java|kotlin-android) ;;
+        python-rust) ;;  # meta-lang: installs both python.sh + rust.sh
+        *)
+            echo "Unsupported language: $LANG" >&2
+            echo "Supported: rust | python | node | astro | nextjs | go | java | kotlin-android | python-rust" >&2
+            exit 1
+            ;;
+    esac
+fi
 
 cd "$TARGET"
 
-echo "→ Installing integration-gates guardrails into $TARGET (lang=$LANG)"
-echo ""
+# ─── Auto-detect helpers (monorepo mode only) ─────────────────────────
+# Print, one per line, the relative subdirectories (relative to target,
+# EXCLUDING the repo root) that contain a manifest matching $1 (a find
+# -name pattern, possibly multiple via "-o"). Root manifests contribute
+# nothing here so a root-only manifest yields empty SRC_GLOBS.
+_detect_subdirs() {
+    # $@ = find name predicates already assembled, e.g. -name pyproject.toml
+    find . -maxdepth 2 \
+        \( -name .git -o -name node_modules -o -name .venv -o -name target \
+           -o -name dist -o -name build \) -prune -o \
+        -type f \( "$@" \) -print 2>/dev/null \
+        | sed -e 's#^\./##' \
+        | while IFS= read -r m; do
+            d=$(dirname "$m")
+            [ "$d" = "." ] && continue
+            echo "$d"
+          done \
+        | sort -u | tr '\n' ' ' | sed 's/ *$//'
+}
 
-# 1. Copy .claude/ structure
+# Return 0 if a manifest matching the given find predicates exists at
+# maxdepth 2 (root OR one subdir level).
+_lang_present() {
+    local hit
+    hit=$(find . -maxdepth 2 \
+        \( -name .git -o -name node_modules -o -name .venv -o -name target \
+           -o -name dist -o -name build \) -prune -o \
+        -type f \( "$@" \) -print 2>/dev/null | head -1)
+    [ -n "$hit" ]
+}
+
+# First subdir (relative, EXCLUDING root suppression) that holds the
+# manifest; emits "." when only a root manifest exists. Used to pick the
+# representative entry-point search root S.
+_first_src_root() {
+    local first
+    first=$(find . -maxdepth 2 \
+        \( -name .git -o -name node_modules -o -name .venv -o -name target \
+           -o -name dist -o -name build \) -prune -o \
+        -type f \( "$@" \) -print 2>/dev/null \
+        | sed -e 's#^\./##' | head -1)
+    if [ -z "$first" ]; then echo "."; return; fi
+    local d
+    d=$(dirname "$first")
+    echo "$d"
+}
+
+# Normalize "./x" → "x" and "./" → "" ; "." stays ".".
+_norm_path() {
+    case "$1" in
+        ./*) echo "${1#./}" ;;
+        *)   echo "$1" ;;
+    esac
+}
+
+# Best-effort representative entry-point for a lang given search root S.
+_entry_point_python() {
+    local S="$1" c
+    for c in "$S/main.py" "$S/__main__.py" "$S/src/__main__.py"; do
+        [ -f "$c" ] && { _norm_path "$c"; return; }
+    done
+    c=$(ls "$S"/*/__main__.py 2>/dev/null | head -1)
+    [ -n "$c" ] && { _norm_path "$c"; return; }
+    c=$(ls "$S"/*/cli.py 2>/dev/null | head -1)
+    [ -n "$c" ] && { _norm_path "$c"; return; }
+    _norm_path "$S/main.py"
+}
+_entry_point_node() {
+    local S="$1" main
+    if [ -f "$S/package.json" ] && command -v node >/dev/null 2>&1; then
+        main=$(node -e "try { console.log(require('./$S/package.json').main || '') } catch(e) { console.log('') }" 2>/dev/null)
+        if [ -n "$main" ]; then _norm_path "$S/$main"; return; fi
+    fi
+    _norm_path "$S/src/index.ts"
+}
+_entry_point_rust() {
+    local S="$1" c
+    [ -f "$S/src/main.rs" ] && { _norm_path "$S/src/main.rs"; return; }
+    c=$(ls "$S"/crates/*/src/main.rs 2>/dev/null | head -1)
+    [ -n "$c" ] && { _norm_path "$c"; return; }
+    _norm_path "$S/src/main.rs"
+}
+_entry_point_go() {
+    local S="$1" c
+    [ -f "$S/main.go" ] && { _norm_path "$S/main.go"; return; }
+    c=$(ls "$S"/cmd/*/main.go 2>/dev/null | head -1)
+    [ -n "$c" ] && { _norm_path "$c"; return; }
+    _norm_path "$S/main.go"
+}
+
+# ─── Determine LANGS_TO_INSTALL + MULTI ───────────────────────────────
+if [ "$AUTO_DETECT" = "1" ]; then
+    DETECTED=""
+    _lang_present -name pyproject.toml -o -name requirements.txt && DETECTED="$DETECTED python"
+    _lang_present -name package.json                             && DETECTED="$DETECTED node"
+    _lang_present -name Cargo.toml                               && DETECTED="$DETECTED rust"
+    _lang_present -name go.mod                                   && DETECTED="$DETECTED go"
+
+    # Stable de-dup in canonical order: python node rust go.
+    LANGS_TO_INSTALL=""
+    for L in python node rust go; do
+        case " $DETECTED " in *" $L "*) LANGS_TO_INSTALL="$LANGS_TO_INSTALL $L" ;; esac
+    done
+    LANGS_TO_INSTALL=$(echo "$LANGS_TO_INSTALL" | sed 's/^ *//;s/ *$//')
+
+    if [ -z "$LANGS_TO_INSTALL" ]; then
+        echo "no language manifests found under $TARGET at maxdepth 2; pass an explicit <lang> (rust|python|node|...)" >&2
+        exit 1
+    fi
+
+    N_LANGS=$(echo "$LANGS_TO_INSTALL" | wc -w | tr -d ' ')
+    MULTI=0
+    [ "$N_LANGS" -gt 1 ] && MULTI=1
+    echo "→ Installing integration-gates guardrails into $TARGET (auto-detect)"
+    echo "→ Auto-detected langs: $LANGS_TO_INSTALL"
+    echo ""
+elif [ "$LANG" = "python-rust" ]; then
+    LANGS_TO_INSTALL="python rust"
+    MULTI=1
+    echo "→ Installing integration-gates guardrails into $TARGET (lang=$LANG)"
+    echo ""
+else
+    LANGS_TO_INSTALL="$LANG"
+    MULTI=0
+    echo "→ Installing integration-gates guardrails into $TARGET (lang=$LANG)"
+    echo ""
+fi
+
+# 1. Copy .claude/ structure. Core three hooks are lang-agnostic; the
+#    per-lang checker(s) are copied for EVERY lang in LANGS_TO_INSTALL.
 mkdir -p .claude/hooks/lang
 cp -f "$SCRIPT_DIR/.claude/hooks/integration-gate.sh" .claude/hooks/
 cp -f "$SCRIPT_DIR/.claude/hooks/ghost-report.sh" .claude/hooks/
 cp -f "$SCRIPT_DIR/.claude/hooks/new-symbol-guard.sh" .claude/hooks/
-if [ "$LANG" = "python-rust" ]; then
-    cp -f "$SCRIPT_DIR/.claude/hooks/lang/python.sh" .claude/hooks/lang/
-    cp -f "$SCRIPT_DIR/.claude/hooks/lang/rust.sh" .claude/hooks/lang/
-else
-    cp -f "$SCRIPT_DIR/.claude/hooks/lang/$LANG.sh" .claude/hooks/lang/
-fi
+for L in $LANGS_TO_INSTALL; do
+    cp -f "$SCRIPT_DIR/.claude/hooks/lang/$L.sh" .claude/hooks/lang/
+done
 chmod +x .claude/hooks/*.sh .claude/hooks/lang/*.sh
 
 echo "  ✓ Copied hook scripts to .claude/hooks/"
@@ -82,7 +214,68 @@ else
 fi
 
 # 3. Create project.conf if missing
-if [ ! -f ".claude/hooks/project.conf" ]; then
+if [ ! -f ".claude/hooks/project.conf" ] && [ "$AUTO_DETECT" = "1" ]; then
+    # ─── Auto-detect (monorepo) project.conf ──────────────────────────
+    # Compute, per detected lang, its SRC_GLOBS (subdirs holding the
+    # manifest, empty if root-level) and a best-effort ENTRY_POINTS.
+    declare -A AD_EP AD_SG
+    for L in $LANGS_TO_INSTALL; do
+        case "$L" in
+            python) PRED='-name pyproject.toml -o -name requirements.txt' ;;
+            node)   PRED='-name package.json' ;;
+            rust)   PRED='-name Cargo.toml' ;;
+            go)     PRED='-name go.mod' ;;
+        esac
+        # shellcheck disable=SC2086
+        SG=$(_detect_subdirs $PRED)
+        # shellcheck disable=SC2086
+        S=$(_first_src_root $PRED)
+        case "$L" in
+            python) EP=$(_entry_point_python "$S") ;;
+            node)   EP=$(_entry_point_node "$S") ;;
+            rust)   EP=$(_entry_point_rust "$S") ;;
+            go)     EP=$(_entry_point_go "$S") ;;
+        esac
+        AD_EP["$L"]="$EP"
+        AD_SG["$L"]="$SG"
+    done
+
+    if [ "$MULTI" = "1" ]; then
+        {
+            echo "# Auto-generated by guardrails/install.sh (monorepo auto-detect) on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "# See guardrails/docs/LANG_MATRIX.md §Multi-lang projects for full reference."
+            echo ""
+            echo "LANGS=\"$LANGS_TO_INSTALL\""
+            for L in $LANGS_TO_INSTALL; do
+                echo "ENTRY_POINTS_${L}=\"${AD_EP[$L]}\""
+            done
+            echo ""
+            echo "# SRC_GLOBS auto-derived from layout (empty = root-level, lets the"
+            echo "# checker auto-detect). Override here if your sources live elsewhere."
+            for L in $LANGS_TO_INSTALL; do
+                echo "SRC_GLOBS_${L}=\"${AD_SG[$L]}\""
+            done
+        } > .claude/hooks/project.conf
+        echo "  ✓ Created .claude/hooks/project.conf (LANGS=$LANGS_TO_INSTALL)"
+    else
+        # Exactly one lang detected → legacy single-lang format.
+        ONLY_LANG="$LANGS_TO_INSTALL"
+        {
+            echo "# Auto-generated by guardrails/install.sh (monorepo auto-detect) on $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "# See guardrails/docs/LANG_MATRIX.md for full reference."
+            echo ""
+            echo "LANG=\"$ONLY_LANG\""
+            echo "ENTRY_POINTS=\"${AD_EP[$ONLY_LANG]}\""
+            # SRC_GLOBS only when the manifest lives in a subdir (not root).
+            if [ -n "${AD_SG[$ONLY_LANG]}" ]; then
+                echo "SRC_GLOBS=\"${AD_SG[$ONLY_LANG]}\""
+            fi
+        } > .claude/hooks/project.conf
+        echo "  ✓ Created .claude/hooks/project.conf (LANG=$ONLY_LANG, ENTRY_POINTS=${AD_EP[$ONLY_LANG]})"
+    fi
+    echo "     Verify the entry-point is correct. Edit if needed:"
+    echo "       \$EDITOR .claude/hooks/project.conf"
+elif [ ! -f ".claude/hooks/project.conf" ]; then
     # Detect entry-point heuristically by language
     case "$LANG" in
         rust)
@@ -242,9 +435,31 @@ if [ ! -f ".claude/ghost-baseline.txt" ]; then
             >> "$TMP_BASE" || true
         sort -u "$TMP_BASE" > .claude/ghost-baseline.txt
         rm -f "$TMP_BASE"
+    elif [ "$MULTI" = "1" ]; then
+        # Auto-detect multi-lang: loop over LANGS_TO_INSTALL, run each
+        # checker with its ENTRY_POINTS_<lang> + SRC_GLOBS_<lang>, prefix
+        # output with lang: and normalize file:line:symbol → file:symbol.
+        # `|| true` so a missing entry-point/toolchain never aborts install.
+        TMP_BASE=$(mktemp)
+        for L in $LANGS_TO_INSTALL; do
+            EP_VAR="ENTRY_POINTS_${L}"
+            SG_VAR="SRC_GLOBS_${L}"
+            TE_VAR="TEST_EXCLUDES_${L}"
+            ENTRY_POINTS="${!EP_VAR:-}" \
+            SRC_GLOBS="${!SG_VAR:-${SRC_GLOBS:-}}" \
+            TEST_EXCLUDES="${!TE_VAR:-${TEST_EXCLUDES:-}}" \
+                bash ".claude/hooks/lang/$L.sh" 2>/dev/null \
+                | awk -F: -v OFS=: -v lang="$L" '{ sym=$3; for(i=4;i<=NF;i++) sym=sym":"$i; print lang ":" $1 ":" sym }' \
+                >> "$TMP_BASE" || true
+        done
+        sort -u "$TMP_BASE" > .claude/ghost-baseline.txt
+        rm -f "$TMP_BASE"
     else
         # Single-lang: also normalize to file:symbol (matches integration-gate.sh format).
-        bash ".claude/hooks/lang/$LANG.sh" 2>/dev/null \
+        # In auto-detect single mode LANG is empty, so derive the checker
+        # name from LANGS_TO_INSTALL (which holds exactly one lang).
+        SINGLE_LANG="${LANG:-$LANGS_TO_INSTALL}"
+        bash ".claude/hooks/lang/$SINGLE_LANG.sh" 2>/dev/null \
             | awk -F: -v OFS=: '{ sym=$3; for(i=4;i<=NF;i++) sym=sym":"$i; print $1 ":" sym }' \
             > .claude/ghost-baseline.txt || true
     fi

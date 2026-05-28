@@ -27,8 +27,11 @@ El directorio `guardrails/` contiene un paquete de defensas listas para copiar a
 
 Instalación (un comando):
 ```bash
-bash guardrails/install.sh /ruta/a/tu-proyecto rust   # o python, node, go, java
+bash guardrails/install.sh /ruta/a/tu-proyecto            # monorepo: auto-detecta langs (maxdepth 2) e instala la unión
+bash guardrails/install.sh /ruta/a/tu-proyecto rust       # o un lang explícito: python, node, go, java...
 ```
+
+Si omites el lang, el instalador escanea el proyecto a `maxdepth 2` (raíz + un nivel de subdirectorios) en busca de manifests e instala la **unión** de stacks. Monorepos sin manifest raíz (manifests en subdirectorios, ej. `backend/pyproject.toml` + `frontend/package.json`) ya **NO** caen en `lang=unknown`.
 
 Más detalle: [guardrails/README.md](guardrails/README.md). **Si eres un AI leyendo este repo** para setear un proyecto nuevo, esa README tiene una sección específica `How AI should apply this`.
 
