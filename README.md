@@ -24,6 +24,7 @@ El directorio `guardrails/` contiene un paquete de defensas listas para copiar a
 - **PostToolUse hook** que warning inmediato al crear símbolos públicos sin call-site
 - **Stop hook con `exit 2`** que bloquea fin de turno si hay ghosts nuevos vs baseline versionada
 - **Definition of Done** listo para pegar en `CLAUDE.md` del proyecto
+- **Fixes de sistemas externos → ejecución real obligatoria.** Tests mockeados no son suficientes cuando lo que falla es justamente el sistema mockeado. Ver [nueva sección en Definition of Done](guardrails/docs/DEFINITION_OF_DONE.md#fixes-de-sistemas-externos-requieren-verificación-de-ejecución-real) y el skill [worker-bootstrap](guardrails/skills/worker-bootstrap.md).
 
 Instalación (un comando):
 ```bash
