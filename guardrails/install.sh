@@ -197,6 +197,7 @@ mkdir -p .claude/hooks/lang
 cp -f "$SCRIPT_DIR/.claude/hooks/integration-gate.sh" .claude/hooks/
 cp -f "$SCRIPT_DIR/.claude/hooks/ghost-report.sh" .claude/hooks/
 cp -f "$SCRIPT_DIR/.claude/hooks/new-symbol-guard.sh" .claude/hooks/
+cp -f "$SCRIPT_DIR/.claude/hooks/ghost-test-guard.sh" .claude/hooks/
 for L in $LANGS_TO_INSTALL; do
     cp -f "$SCRIPT_DIR/.claude/hooks/lang/$L.sh" .claude/hooks/lang/
 done
@@ -205,9 +206,37 @@ chmod +x .claude/hooks/*.sh .claude/hooks/lang/*.sh
 echo "  ✓ Copied hook scripts to .claude/hooks/"
 
 # 2. Merge or create settings.json
+# fix(#44): merge programmatically when settings.json already exists; never silently skip.
 if [ -f ".claude/settings.json" ]; then
-    echo "  ⚠️  .claude/settings.json already exists — NOT overwriting."
-    echo "     Merge the hooks section from $SCRIPT_DIR/.claude/settings.json manually."
+    if command -v jq >/dev/null 2>&1; then
+        if ! MERGED=$(jq -s '
+            .[0] as $existing | .[1] as $template |
+            $existing * { "hooks": (
+                ($existing.hooks // {}) as $eh |
+                ($template.hooks // {}) as $th |
+                reduce ($th | keys[]) as $event (
+                    $eh;
+                    . + { ($event): (
+                        ((.[$event] // []) + $th[$event]) | unique_by(.hooks[0].command // .)
+                    )}
+                )
+            )}
+        ' ".claude/settings.json" "$SCRIPT_DIR/.claude/settings.json"); then
+            echo "  ⚠️  jq failed to merge settings.json — NOT overwriting." >&2
+            echo "     Merge manually from $SCRIPT_DIR/.claude/settings.json" >&2
+            exit 1
+        fi
+        if [ -z "$MERGED" ]; then
+            echo "  ⚠️  jq produced empty output — NOT overwriting settings.json." >&2
+            exit 1
+        fi
+        echo "$MERGED" > .claude/settings.json
+        echo "  ✓ Merged hooks into existing .claude/settings.json (jq)"
+    else
+        echo "  ⚠️  .claude/settings.json already exists and jq is not installed." >&2
+        echo "     Merge the hooks section from $SCRIPT_DIR/.claude/settings.json manually." >&2
+        echo "     Required hooks: SessionStart ghost-report.sh, PostToolUse new-symbol-guard.sh, Stop integration-gate.sh + ghost-test-guard.sh" >&2
+    fi
 else
     cp -f "$SCRIPT_DIR/.claude/settings.json" .claude/settings.json
     echo "  ✓ Created .claude/settings.json with hooks registered"

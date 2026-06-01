@@ -205,6 +205,17 @@ Los archivos finales viven en el proyecto target:
 - No añadir al baseline un símbolo nuevo solo porque "es urgente". El baseline es para ghosts HEREDADOS al momento de instalación. Símbolos nuevos DEBEN ir al call-graph.
 - No comentar el hook Stop en `settings.json`. Si bloquea, es síntoma, no ruido.
 
+## Ghost-Test Guard (hook)
+
+`guardrails/hooks/ghost-test-guard.sh` — Stop hook that detects tests that verify source-code text instead of runtime behavior.
+
+**Detecta:**
+- **source-grep**: `open()`/`read_text()`/`readFileSync()` sobre archivos fuente del repo + assert de substring
+- **paths absolutos hardcodeados**: `/workspace/.worktrees/`, `/tmp/*-work-*`, `/home/rpach` → `FileNotFoundError` en CI
+- **bats structural**: bats que inspeccionan el script con `grep`/`cat` sin invocarlo — verdes mientras el script rompe cosas reales
+
+**Exit codes:** 0 = OK, 2 = ghost tests detectados (bloquea Stop)
+
 ## Documentos relacionados
 
 - [docs/FAKE_WORK_AUDIT.md](docs/FAKE_WORK_AUDIT.md) — Caso real que motivó este template (evidencia, métricas, anti-patterns)
