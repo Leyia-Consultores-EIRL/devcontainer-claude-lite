@@ -65,6 +65,6 @@
     "SHELL": "/bin/zsh",
     "CLAUDE_CONFIG_DIR": "/home/dev/.claude"
   },
-  "postCreateCommand": "test -f python/pyproject.toml && (cd python && sudo uv pip install --system -e .) || (test -f requirements.txt && sudo uv pip install --system -r requirements.txt) || echo 'No Python deps to install'",
+  "postCreateCommand": "bash /workspace/shared/configure-git-identity.sh && test -f python/pyproject.toml && (cd python && sudo uv pip install --system -e .) || (test -f requirements.txt && sudo uv pip install --system -r requirements.txt) || echo 'No Python deps to install'",
   "postStartCommand": "bash .devcontainer/post-start.sh"
 }
