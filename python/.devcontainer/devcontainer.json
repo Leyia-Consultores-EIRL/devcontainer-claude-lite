@@ -4,8 +4,7 @@
     "dockerfile": "Dockerfile",
     "context": "..",
     "args": {
-      "TZ": "${localEnv:TZ:America/Lima}",
-      "CLAUDE_CODE_VERSION": "latest"
+      "TZ": "${localEnv:TZ:America/Lima}"
     }
   },
   "userEnvProbe": "none",

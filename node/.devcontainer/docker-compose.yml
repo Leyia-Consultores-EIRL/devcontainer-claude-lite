@@ -27,13 +27,13 @@ services:
       dockerfile: .devcontainer/Dockerfile
       args:
         TZ: ${TZ:-America/Lima}
-        CLAUDE_CODE_VERSION: latest
     volumes:
       - ..:/workspace:cached
       - claude-lite-history:/commandhistory
-      - claude-lite-config:/home/node/.claude
+      - claude-lite-config:/home/dev/.claude
       - claude-lite-node-modules:/workspace/node_modules
       - /var/run/docker.sock:/var/run/docker.sock
+    init: true
     security_opt:
       - seccomp=unconfined
     command: sleep infinity
