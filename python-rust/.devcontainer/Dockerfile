@@ -3,6 +3,8 @@ FROM fleet-devcontainer-base-python:1.0.0
 ARG TZ
 ENV TZ="$TZ"
 
+USER root
+
 # Chromium + Playwright deps + native build deps for crates
 # (browser automation, screenshots; cpal, ALSA, Pillow, ring compilations)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,11 +36,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # uses pydub / soundfile / symphonia / sox. The first consumer
 # (audio-a-texto) needs them; generic Python+Rust projects don't.
 #
+# USER root
 # RUN apt-get update && apt-get install -y --no-install-recommends \
 #   ffmpeg \
 #   libsndfile1 \
 #   libsox-fmt-all \
 #   && apt-get clean && rm -rf /var/lib/apt/lists/*
+# USER dev
+
+USER dev
 
 # Rust toolchain (rustup + stable)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable && \

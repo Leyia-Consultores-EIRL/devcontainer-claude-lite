@@ -3,6 +3,8 @@ FROM fleet-devcontainer-base-python:1.0.0
 ARG TZ
 ENV TZ="$TZ"
 
+USER root
+
 # Chromium + Playwright deps for Chrome DevTools MCP
 # (browser automation, screenshots, accessibility snapshots)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,6 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   fonts-liberation \
   sqlite3 \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+USER dev
 
 # Python: no virtualenv needed in container, install direct
 ENV PIP_BREAK_SYSTEM_PACKAGES=1

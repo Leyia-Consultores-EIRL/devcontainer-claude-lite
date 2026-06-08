@@ -3,6 +3,8 @@ FROM fleet-devcontainer-base-node:1.0.0
 ARG TZ
 ENV TZ="$TZ"
 
+USER root
+
 # Chromium + Playwright deps for Chrome DevTools MCP
 # (browser automation, screenshots, accessibility snapshots)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,6 +36,9 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Node/npm globals
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 RUN mkdir -p /usr/local/share/npm-global
+
+USER dev
+
 ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/share/npm-global/bin
 
 # Chromium: skip Playwright download, use system binary
