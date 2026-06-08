@@ -10,9 +10,23 @@ Claude escribe todo el codigo. ESLint, Prettier y formatOnSave son CPU desperdic
 
 | Stack | Carpeta | Imagen base | Incluye |
 |---|---|---|---|
-| Node.js | `node/` | `node:22-slim` | pnpm (corepack), Node 22, Chromium (MCP) |
-| Python | `python/` | `python:3.12-slim` | uv, Python 3.12, sqlite3, Node 22 (para Claude Code), Chromium (MCP) |
-| Python+Rust | `python-rust/` | `python:3.13-slim` | uv, Python 3.13, rustup stable + clippy + rustfmt + rust-analyzer, ffmpeg + libsndfile + libsox, Node 22 (para Claude Code), Chromium (MCP) |
+| Node.js | `node/` | `fleet-devcontainer-base-node:1.0.0` | pnpm (corepack), Chromium (MCP) |
+| Python | `python/` | `fleet-devcontainer-base-python:1.0.0` | Python 3.13, Chromium (MCP) |
+| Python+Rust | `python-rust/` | `fleet-devcontainer-base-python:1.0.0` | Python 3.13, rustup stable + clippy + rustfmt + rust-analyzer, Chromium (MCP) |
+
+### Contrato de imagen base (fleet)
+
+Las imagenes base (`fleet-devcontainer-base-node`, `fleet-devcontainer-base-python`) viven en el repo `fleet/devcontainer-base/`. El toolchain completo (Claude Code, opencode, Node/Python runtime, uv, git, curl, gh, jq, zsh, docker-cli, build-essential, openssh-client, postgresql-client, entrypoint-preconditions.sh, USER dev, WORKDIR /workspace) se define en `fleet/devcontainer-base/install-fleet-toolchain.sh`.
+
+Los templates aqui **extienden**, nunca redefinen. Cada Dockerfile solo agrega capas de lenguaje (pnpm, rustup, etc.) y dependencias de MCP (Chromium). Cualquier cosa que no sea especifica del stack va en el toolchain base.
+
+**Bump de version fleet-wide:** cambiar la version en todos los `FROM fleet-devcontainer-base-<lang>:X.Y.Z` y `docker-compose.yml` referencias. Comando rapido:
+
+```bash
+# Bumpear todas las referencias a la base a una nueva version
+sed -i 's/fleet-devcontainer-base-\(node\|python\):[0-9.]\+/fleet-devcontainer-base-\1:1.0.1/g' \
+  node/.devcontainer/Dockerfile python/.devcontainer/Dockerfile python-rust/.devcontainer/Dockerfile
+```
 
 ## Integration gates — anti "fake-work" para Claude Code
 
@@ -41,11 +55,12 @@ Más detalle: [guardrails/README.md](guardrails/README.md). **Si eres un AI leye
 - Zsh minimo (sin powerlevel10k, sin oh-my-zsh)
 - Historial persistente entre reinicios
 - Docker CLI via socket del host
-- Claude Code instalado globalmente
+- Claude Code, opencode, y toolchain base instalados via `fleet/devcontainer-base/install-fleet-toolchain.sh`
+- uv (Python deps) incluido en la base
 - Chromium completo para [Chrome DevTools MCP](https://github.com/anthropics/claude-code/blob/main/docs/mcp.md) (screenshots, snapshots, browser automation)
 - Sin ESLint/Prettier/GitLens en background
 - `setup-hooks.sh` para configurar quality gates solo en el commit (detecta npm/pnpm/bun)
-- `docker-compose.yml` con servicios opcionales (PostgreSQL, Redis, MySQL, MongoDB, Qdrant, Minio, Jaeger)
+- `docker-compose.yml` con servicios opcionales (PostgreSQL, Redis, MySQL, MongoDB, Qdrant, Minio, Jaeger) y `init: true` en el servicio `app`
 - `postCreateCommand` auto-instala dependencias (detecta pnpm/npm/pip)
 - `initializeCommand` limpia VS Code Server viejo de la VM Docker Desktop (previene "No space left on device")
 - `postStartCommand` aplica fixes de Docker Desktop (`.gitconfig` como directorio, `safe.directory`)
@@ -54,7 +69,7 @@ Más detalle: [guardrails/README.md](guardrails/README.md). **Si eres un AI leye
 - File watcher excludes para reducir CPU del IDE
 - Healthcheck de red en el servicio `app` (detecta perdida silenciosa de conectividad)
 - Puertos parametrizables via env vars (evita conflictos entre proyectos)
-- `build-essential` incluido (compilacion de paquetes nativos: sharp, Pillow, bcrypt, etc.)
+- `build-essential` incluido via imagen base (compilacion de paquetes nativos: sharp, Pillow, bcrypt, etc.)
 
 ## Python: uv en lugar de pip
 
@@ -153,13 +168,7 @@ docker compose -f .devcontainer/docker-compose.yml up -d
 
 ### 4. DB clients opcionales
 
-En el `Dockerfile`, descomenta los clientes que necesites para debug directo desde el container:
-
-```dockerfile
-# postgresql-client \
-# default-mysql-client \
-# redis-tools \
-```
+`postgresql-client` viene incluido en la imagen base. Si necesitas `redis-tools` o `default-mysql-client`, agregalos en el `RUN apt-get install` del Dockerfile del template. Estos clientes permiten debug directo desde el container via `psql`, `redis-cli`, `mysql`.
 
 ### 5. Agregar extensiones de lenguaje
 

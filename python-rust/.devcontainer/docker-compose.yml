@@ -30,7 +30,6 @@ services:
       dockerfile: .devcontainer/Dockerfile
       args:
         TZ: ${TZ:-America/Lima}
-        CLAUDE_CODE_VERSION: latest
     volumes:
       - ..:/workspace:cached
       - pyrust-history:/commandhistory
@@ -41,6 +40,7 @@ services:
       - pyrust-hf-cache:/home/dev/.cache/huggingface
       - pyrust-torch-cache:/home/dev/.cache/torch
       - /var/run/docker.sock:/var/run/docker.sock
+    init: true
     security_opt:
       - seccomp=unconfined
     command: sleep infinity
