@@ -48,6 +48,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    # default de governance infra; el producto puede ajustarlo
+    mem_limit: 14g
     # env_file:
     #   - ../.env
     # depends_on:
