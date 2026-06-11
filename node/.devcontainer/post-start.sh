@@ -50,3 +50,12 @@ fi
 
 # Bind-mounted workspaces may have different uid — mark as safe
 git config --global safe.directory /workspace 2>/dev/null || true
+
+# Install canonical Claude Code plugins and write enabledPlugins to settings.
+# Source path: /workspace/shared/ is the bind-mounted repo shared dir.
+if [ -f /workspace/shared/install-claude-plugins.sh ]; then
+  # shellcheck source=../../../shared/install-claude-plugins.sh
+  . /workspace/shared/install-claude-plugins.sh
+  ensure_claude_plugins_settings
+  install_claude_plugins
+fi
