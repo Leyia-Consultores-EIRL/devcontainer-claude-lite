@@ -70,6 +70,7 @@ Más detalle: [guardrails/README.md](guardrails/README.md). **Si eres un AI leye
 - Healthcheck de red en el servicio `app` (detecta perdida silenciosa de conectividad)
 - Puertos parametrizables via env vars (evita conflictos entre proyectos)
 - `build-essential` incluido via imagen base (compilacion de paquetes nativos: sharp, Pillow, bcrypt, etc.)
+- Plugins de Claude Code (`code-review`, `superpowers`, `context7`, y 12 más) bakeados en create: el set canónico se instala automáticamente al levantar el container, idempotente
 
 ## Python: uv en lugar de pip
 
@@ -97,6 +98,16 @@ worker command: bash -c "uv pip install ... && celery ..." (worker services)
 | Quality gates | En background (tiempo real) | Solo en commit (git hooks) |
 | Browser | No incluido | Chromium completo (Chrome DevTools MCP) |
 | Servicios | No incluidos | docker-compose.yml modular |
+
+## Plugins de Claude Code
+
+Todos los templates incluyen el set canónico de 15 plugins pre-instalados:
+
+`code-review`, `code-simplifier`, `security-guidance`, `serena`, `typescript-lsp`, `playwright`, `github`, `commit-commands`, `feature-dev`, `superpowers`, `context7`, `frontend-design`, `claude-md-management`, `hookify`, `ralph-loop`
+
+El set vive en `shared/install-claude-plugins.sh`. El `post-start.sh` de cada variante lo instala idempotentemente al levantar el container (solo instala los que faltan). `enabledPlugins` se escribe en `~/.claude/settings.json` en el mismo paso.
+
+Para agregar un plugin extra en una variante, definí `EXTRA_PLUGINS` antes de sourcear el script. Por ejemplo, la variante `kotlin-android` (cuando se cree) usará `EXTRA_PLUGINS=(kotlin-lsp)`.
 
 ## Uso
 
