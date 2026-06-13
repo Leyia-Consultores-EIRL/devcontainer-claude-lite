@@ -233,9 +233,10 @@ if [ -f ".claude/settings.json" ]; then
         echo "$MERGED" > .claude/settings.json
         echo "  ✓ Merged hooks into existing .claude/settings.json (jq)"
     else
-        echo "  ⚠️  .claude/settings.json already exists and jq is not installed." >&2
-        echo "     Merge the hooks section from $SCRIPT_DIR/.claude/settings.json manually." >&2
-        echo "     Required hooks: SessionStart ghost-report.sh, PostToolUse new-symbol-guard.sh, Stop integration-gate.sh + ghost-test-guard.sh" >&2
+        echo "ERROR: .claude/settings.json already exists but jq is not installed." >&2
+        echo "  jq is required to merge hooks into an existing settings.json." >&2
+        echo "  Install jq (e.g. apt-get install jq / brew install jq) and re-run." >&2
+        exit 1
     fi
 else
     cp -f "$SCRIPT_DIR/.claude/settings.json" .claude/settings.json
@@ -515,6 +516,21 @@ else
     sed -n '/<!-- begin/,/<!-- end/p' "$SCRIPT_DIR/docs/DEFINITION_OF_DONE.md" | \
         sed '1d;$d' >> CLAUDE.md
     echo "  ✓ Appended Definition of Done to CLAUDE.md"
+fi
+
+# 5b. Provision AGENTS.md (guardrails for Codex/GPT agents, parallel to CLAUDE.md DoD).
+AGENTS_MARKER="## Regla #-1"
+if [ -f "AGENTS.md" ] && grep -q "$AGENTS_MARKER" AGENTS.md; then
+    echo "  ⚠️  AGENTS.md already has guardrails content — NOT overwriting."
+else
+    if [ -f "AGENTS.md" ]; then
+        echo "" >> AGENTS.md
+        cat "$SCRIPT_DIR/AGENTS.md" >> AGENTS.md
+        echo "  ✓ Appended guardrails content to existing AGENTS.md"
+    else
+        cp -f "$SCRIPT_DIR/AGENTS.md" AGENTS.md
+        echo "  ✓ Created AGENTS.md from guardrails template"
+    fi
 fi
 
 # 6. Install the verify-* skill family (declarative-with-evidence layer).
