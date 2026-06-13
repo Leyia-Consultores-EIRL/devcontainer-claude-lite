@@ -7,7 +7,7 @@
 # project.conf with the specified lang, initializes ghost-baseline.txt,
 # and appends the Definition of Done to <target>/CLAUDE.md.
 #
-# langs: rust | python | node | astro | nextjs | go | java | kotlin-android
+# langs: rust | python | node | astro | nextjs | go | java | kotlin-android | shell
 #
 # `astro` is a specialization of `node` for Astro projects: it treats every
 # file under src/pages/ plus src/middleware.ts and astro.config.{mjs,ts,js}
@@ -33,7 +33,7 @@ LANG="${2:-}"
 
 if [ -z "$TARGET" ]; then
     echo "Usage: $0 <target-project-dir> [lang]" >&2
-    echo "  langs: rust | python | node | astro | nextjs | go | java | kotlin-android | python-rust" >&2
+    echo "  langs: rust | python | node | astro | nextjs | go | java | kotlin-android | shell | python-rust" >&2
     echo "  (omit lang to auto-detect a monorepo at maxdepth 2)" >&2
     exit 1
 fi
@@ -51,11 +51,11 @@ if [ -z "$LANG" ]; then
     AUTO_DETECT=1
 else
     case "$LANG" in
-        rust|python|node|astro|nextjs|go|java|kotlin-android) ;;
+        rust|python|node|astro|nextjs|go|java|kotlin-android|shell) ;;
         python-rust) ;;  # meta-lang: installs both python.sh + rust.sh
         *)
             echo "Unsupported language: $LANG" >&2
-            echo "Supported: rust | python | node | astro | nextjs | go | java | kotlin-android | python-rust" >&2
+            echo "Supported: rust | python | node | astro | nextjs | go | java | kotlin-android | shell | python-rust" >&2
             exit 1
             ;;
     esac
@@ -152,6 +152,16 @@ _entry_point_go() {
     [ -n "$c" ] && { _norm_path "$c"; return; }
     _norm_path "$S/main.go"
 }
+_entry_point_shell() {
+    local S="$1" c
+    [ -f "$S/main.sh" ] && { _norm_path "$S/main.sh"; return; }
+    [ -f "$S/scripts/main.sh" ] && { _norm_path "$S/scripts/main.sh"; return; }
+    c=$(find "$S" -maxdepth 2 -name 'main.sh' -type f 2>/dev/null | head -1)
+    [ -n "$c" ] && { _norm_path "$c"; return; }
+    c=$(find "$S" -maxdepth 1 -name '*.sh' -type f 2>/dev/null | grep -v test | head -1)
+    [ -n "$c" ] && { _norm_path "$c"; return; }
+    _norm_path "$S/main.sh"
+}
 
 # ─── Determine LANGS_TO_INSTALL + MULTI ───────────────────────────────
 if [ "$AUTO_DETECT" = "1" ]; then
@@ -161,9 +171,16 @@ if [ "$AUTO_DETECT" = "1" ]; then
     _lang_present -name Cargo.toml                               && DETECTED="$DETECTED rust"
     _lang_present -name go.mod                                   && DETECTED="$DETECTED go"
 
-    # Stable de-dup in canonical order: python node rust go.
+    # Shell: fallback only when no managed-lang manifest found
+    if [ -z "$DETECTED" ]; then
+        { _lang_present -name '*.bats' || \
+          { [ -d scripts ] && find scripts -maxdepth 2 -name '*.sh' -type f 2>/dev/null | grep -q .; }; } \
+          && DETECTED="shell"
+    fi
+
+    # Stable de-dup in canonical order: python node rust go shell.
     LANGS_TO_INSTALL=""
-    for L in python node rust go; do
+    for L in python node rust go shell; do
         case " $DETECTED " in *" $L "*) LANGS_TO_INSTALL="$LANGS_TO_INSTALL $L" ;; esac
     done
     LANGS_TO_INSTALL=$(echo "$LANGS_TO_INSTALL" | sed 's/^ *//;s/ *$//')
@@ -255,6 +272,19 @@ if [ ! -f ".claude/hooks/project.conf" ] && [ "$AUTO_DETECT" = "1" ]; then
             node)   PRED='-name package.json' ;;
             rust)   PRED='-name Cargo.toml' ;;
             go)     PRED='-name go.mod' ;;
+            shell)
+                # Shell has no package manifest; detect scripts/ or root
+                if [ -d scripts ] && find scripts -maxdepth 2 -name '*.sh' -type f 2>/dev/null | grep -q .; then
+                    SG="scripts"
+                    S="scripts"
+                else
+                    SG=""
+                    S="."
+                fi
+                AD_EP["$L"]=$(_entry_point_shell "$S")
+                AD_SG["$L"]="$SG"
+                continue
+                ;;
         esac
         # shellcheck disable=SC2086
         SG=$(_detect_subdirs $PRED)
@@ -401,6 +431,15 @@ elif [ ! -f ".claude/hooks/project.conf" ]; then
             esac
 
             EP="$EP_PY (python) + $EP_RS (rust)"  # display only; written below as separate vars
+            ;;
+        shell)
+            if [ -f "scripts/main.sh" ]; then EP="scripts/main.sh"
+            elif [ -f "main.sh" ]; then EP="main.sh"
+            else
+                EP=$(find . -maxdepth 3 -name '*.sh' -type f 2>/dev/null \
+                    | grep -v 'test\|spec\|bats' | head -1)
+                EP="${EP:-main.sh}"
+            fi
             ;;
     esac
 
